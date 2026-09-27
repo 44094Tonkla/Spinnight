@@ -34,6 +34,7 @@ export const GameProvider = ({ children }) => {
         remainingDeck: [],
         currentCard: null,
         drawnHistory: [],
+        currentTurnPlayerId: null,
         // Never Have I Ever defaults
         currentAskerId: null,
         currentQuestion: '',
@@ -81,6 +82,7 @@ export const GameProvider = ({ children }) => {
       remainingDeck: gs.remainingDeck || [],
       currentCard: gs.currentCard || null,
       drawnHistory: gs.drawnHistory || [],
+      currentTurnPlayerId: gs.currentTurnPlayerId || (roomData.players && roomData.players.length > 0 ? roomData.players[0].id : null),
       // Never Have I Ever state
       currentAskerId: gs.currentAskerId || null,
       currentQuestion: gs.currentQuestion || '',

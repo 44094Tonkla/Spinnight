@@ -117,6 +117,7 @@ export const useRoom = (initialRoomCode = null) => {
           remainingDeck: initialDeck,
           currentCard: null,
           drawnHistory: [],
+          currentTurnPlayerId: user.uid,
           // Never Have I Ever state
           currentAskerId: null,
           currentQuestion: '',
@@ -274,16 +275,31 @@ export const useRoom = (initialRoomCode = null) => {
    * Change Game Type (SPIN, CARD, NEVER, BOMB) in Firestore
    */
   const setGameType = useCallback(async (gameType) => {
-    if (!roomCode) return;
+    if (!roomCode || !roomData) return;
     try {
       const roomRef = doc(db, 'rooms', roomCode);
-      await updateDoc(roomRef, {
-        'gameState.gameType': gameType
-      });
+      const playersList = roomData.players || [];
+      const randomIndex = playersList.length > 0 
+        ? Math.floor(Math.random() * playersList.length) 
+        : -1;
+      const initialTurnPlayerId = randomIndex >= 0 ? playersList[randomIndex].id : null;
+
+      const updates = {
+        'gameState.gameType': gameType,
+        'gameState.currentTurnPlayerId': initialTurnPlayerId
+      };
+
+      if (gameType === 'CARD') {
+        updates['gameState.remainingDeck'] = generateDeck();
+        updates['gameState.currentCard'] = null;
+        updates['gameState.drawnHistory'] = [];
+      }
+
+      await updateDoc(roomRef, updates);
     } catch (err) {
       console.error('Error setting game type:', err);
     }
-  }, [roomCode]);
+  }, [roomCode, roomData]);
 
   /**
    * Update Card Rules in Firestore
@@ -301,42 +317,67 @@ export const useRoom = (initialRoomCode = null) => {
   }, [roomCode]);
 
   /**
-   * Draw a card from the deck in Firestore
+   * Card Game: Turn-based Draw Card function with strict turn authorization and circular index order
    */
   const drawCard = useCallback(async () => {
     if (!roomCode || !roomData) return;
     const gs = roomData.gameState || {};
-    let deck = gs.remainingDeck || [];
+    const playersList = roomData.players || [];
+    if (playersList.length === 0) return;
 
+    const currentUid = currentUser?.uid || sessionStorage.getItem('spinnight_player_id');
+    const currentTurnId = gs.currentTurnPlayerId || playersList[0].id;
+
+    // Check turn authorization: only currentTurnPlayerId can draw
+    if (currentUid && currentTurnId && currentUid !== currentTurnId) {
+      console.warn("Not your turn to draw cards!");
+      return;
+    }
+
+    let deck = gs.remainingDeck || [];
     if (deck.length === 0) {
       deck = generateDeck();
     }
+    if (deck.length === 0) return;
 
     const drawnCard = deck[0];
     const newRemainingDeck = deck.slice(1);
     const history = gs.drawnHistory || [];
 
+    // Circular Index Order: nextIndex = (currentIndex + 1) % players.length
+    const currentIndex = playersList.findIndex(p => p.id === currentTurnId);
+    const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % playersList.length : 0;
+    const nextTurnPlayer = playersList[nextIndex];
+
     const roomRef = doc(db, 'rooms', roomCode);
     await updateDoc(roomRef, {
       'gameState.remainingDeck': newRemainingDeck,
       'gameState.currentCard': drawnCard,
-      'gameState.drawnHistory': [...history, drawnCard]
+      'gameState.drawnHistory': [...history, drawnCard],
+      'gameState.currentTurnPlayerId': nextTurnPlayer ? nextTurnPlayer.id : null
     });
-  }, [roomCode, roomData]);
+  }, [roomCode, roomData, currentUser]);
 
   /**
-   * Reshuffle & reset deck in Firestore
+   * Reshuffle & reset deck in Firestore and randomly select starting player
    */
   const resetDeck = useCallback(async () => {
-    if (!roomCode) return;
+    if (!roomCode || !roomData) return;
+    const playersList = roomData.players || [];
+    const randomIndex = playersList.length > 0 
+      ? Math.floor(Math.random() * playersList.length)
+      : -1;
+    const randomStarter = randomIndex >= 0 ? playersList[randomIndex] : null;
+
     const newDeck = generateDeck();
     const roomRef = doc(db, 'rooms', roomCode);
     await updateDoc(roomRef, {
       'gameState.remainingDeck': newDeck,
       'gameState.currentCard': null,
-      'gameState.drawnHistory': []
+      'gameState.drawnHistory': [],
+      'gameState.currentTurnPlayerId': randomStarter ? randomStarter.id : null
     });
-  }, [roomCode]);
+  }, [roomCode, roomData]);
 
   /**
    * Never Have I Ever: Pick random asker
@@ -417,7 +458,6 @@ export const useRoom = (initialRoomCode = null) => {
     const playersList = roomData.players || [];
     if (playersList.length === 0) return;
 
-    // Random secret duration between 15 and 35 seconds
     const secretDurationSec = Math.floor(Math.random() * (35 - 15 + 1)) + 15;
     const explodeAt = Date.now() + secretDurationSec * 1000;
 
@@ -473,7 +513,7 @@ export const useRoom = (initialRoomCode = null) => {
   const triggerExplosion = useCallback(async (loserUid) => {
     if (!roomCode || !roomData) return;
     const gs = roomData.gameState || {};
-    if (gs.isExploded) return; // Prevent duplicate trigger
+    if (gs.isExploded) return;
 
     const roomRef = doc(db, 'rooms', roomCode);
     await updateDoc(roomRef, {
@@ -542,14 +582,32 @@ export const useRoom = (initialRoomCode = null) => {
    * Host starts the game
    */
   const startGame = useCallback(async () => {
-    if (!roomCode) return;
+    if (!roomCode || !roomData) return;
+    const playersList = roomData.players || [];
+    const randomIndex = playersList.length > 0 
+      ? Math.floor(Math.random() * playersList.length) 
+      : -1;
+    const randomStarter = randomIndex >= 0 ? playersList[randomIndex] : null;
+
     const roomRef = doc(db, 'rooms', roomCode);
-    await updateDoc(roomRef, {
+    const updates = {
       status: 'playing',
       'gameState.gameStatus': 'LOBBY',
-      'gameState.currentRound': 1
-    });
-  }, [roomCode]);
+      'gameState.currentRound': 1,
+      'gameState.currentTurnPlayerId': randomStarter ? randomStarter.id : null
+    };
+
+    if (roomData.gameState?.gameType === 'CARD') {
+      updates['gameState.remainingDeck'] = generateDeck();
+      updates['gameState.currentCard'] = null;
+      updates['gameState.drawnHistory'] = [];
+      if (randomStarter) {
+        updates['gameState.currentTurnPlayerId'] = randomStarter.id;
+      }
+    }
+
+    await updateDoc(roomRef, updates);
+  }, [roomCode, roomData]);
 
   return {
     roomCode,

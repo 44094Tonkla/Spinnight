@@ -197,6 +197,7 @@ const GameContainer = () => {
         {gameType === 'CARD' ? (
           <CardGame 
             gameState={gameState}
+            currentUser={currentUser}
             onDrawCard={drawCard}
             onResetDeck={resetDeck}
             onUpdateRules={updateCardRules}

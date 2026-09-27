@@ -5,6 +5,7 @@ import '../styles/global.css';
 
 const CardGame = ({ 
   gameState, 
+  currentUser,
   onDrawCard, 
   onResetDeck, 
   onUpdateRules, 
@@ -13,11 +14,18 @@ const CardGame = ({
 }) => {
   const [showRuleEditor, setShowRuleEditor] = useState(false);
 
+  const players = gameState?.players || [];
+  const currentUserId = currentUser?.uid;
+
   const cardRules = gameState?.cardRules || DEFAULT_CARD_RULES;
   const remainingDeck = gameState?.remainingDeck || [];
   const currentCard = gameState?.currentCard || null;
   const drawnHistory = gameState?.drawnHistory || [];
   const deckSize = remainingDeck.length;
+
+  const currentTurnPlayerId = gameState?.currentTurnPlayerId || (players.length > 0 ? players[0].id : null);
+  const currentTurnPlayer = players.find(p => p.id === currentTurnPlayerId);
+  const isMyTurn = currentUserId === currentTurnPlayerId;
 
   const isSuitRed = currentCard && (currentCard.suit === '♥' || currentCard.suit === '♦');
   const ruleText = currentCard ? (cardRules[currentCard.rank] || 'ไม่มีกฎสำหรับไพ่ใบนี้') : null;
@@ -45,7 +53,7 @@ const CardGame = ({
               onClick={onResetDeck} 
               style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', background: 'transparent', border: '1px solid var(--text-muted)', color: 'var(--text-muted)', borderRadius: '6px', cursor: 'pointer' }}
             >
-              🔄 สับสำรับใหม่
+              🔄 สับสำรับ & สุ่มคนเริ่ม
             </button>
           )}
         </div>
@@ -67,6 +75,19 @@ const CardGame = ({
       {/* Main Card View Section */}
       <div className="glass-card" style={{ width: '100%', padding: '1.75rem 1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginBottom: '1.5rem' }}>
         
+        {/* 🎲 CURRENT TURN PLAYER INDICATOR */}
+        <div style={{ marginBottom: '1.25rem', width: '100%', display: 'flex', justifyContent: 'center' }}>
+          {isMyTurn ? (
+            <div className="status-badge" style={{ background: 'rgba(212, 175, 55, 0.2)', color: 'var(--gold)', border: '1px solid var(--gold)', fontSize: '0.95rem', padding: '0.5rem 1.25rem' }}>
+              🎯 ถึงตาคุณจั่วไพ่แล้ว! (YOUR TURN)
+            </div>
+          ) : (
+            <div className="status-badge" style={{ background: 'rgba(255, 255, 255, 0.05)', color: 'var(--text-secondary)', border: '1px solid rgba(255, 255, 255, 0.1)', fontSize: '0.9rem', padding: '0.4rem 1rem' }}>
+              ⏳ ตาของ: <strong style={{ color: 'var(--gold)', marginLeft: '0.35rem' }}>{currentTurnPlayer?.name || 'ผู้เล่นถัดไป'}</strong> (กำลังรอจั่วไพ่...)
+            </div>
+          )}
+        </div>
+
         {currentCard ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
             {/* Playing Card UI */}
@@ -113,25 +134,33 @@ const CardGame = ({
             </div>
           </div>
         ) : (
-          <div style={{ padding: '2rem 1rem' }}>
+          <div style={{ padding: '1.5rem 1rem' }}>
             <div style={{ fontSize: '3.5rem', marginBottom: '0.75rem', lineHeight: 1 }}>🎴</div>
             <h3 style={{ color: 'var(--text-main)', fontSize: '1.3rem', marginBottom: '0.25rem' }}>
-              กดปุ่มด้านล่างเพื่อจับไพ่ใบแรก
+              สำรับไพ่พร้อมแล้ว (52 ใบ)
             </h3>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-              สำรับไพ่พร้อมแล้ว มีทั้งหมด 52 ใบ
+              {isMyTurn ? 'กดปุ่มด้านล่างเพื่อเริ่มจั่วไพ่ใบแรก!' : `รอคุณ ${currentTurnPlayer?.name} จั่วไพ่ใบแรก`}
             </p>
           </div>
         )}
 
-        {/* Draw Card Button */}
+        {/* 🃏 TURN-BASED DRAW CARD BUTTON */}
         {deckSize > 0 ? (
           <button 
             onClick={onDrawCard} 
+            disabled={!isMyTurn}
             className="primary-button" 
-            style={{ fontSize: '1.3rem', padding: '0.85rem 2.5rem', width: '100%', maxWidth: '320px' }}
+            style={{ 
+              fontSize: '1.3rem', 
+              padding: '0.85rem 2.5rem', 
+              width: '100%', 
+              maxWidth: '360px',
+              opacity: isMyTurn ? 1 : 0.4,
+              cursor: isMyTurn ? 'pointer' : 'not-allowed'
+            }}
           >
-            🃏 จับไพ่ (DRAW CARD)
+            {isMyTurn ? '🃏 จั่วไพ่ (ตาของคุณ)' : `⏳ รอคุณ ${currentTurnPlayer?.name || 'เพื่อน'} จั่วไพ่...`}
           </button>
         ) : (
           <div style={{ width: '100%', textAlign: 'center' }}>
